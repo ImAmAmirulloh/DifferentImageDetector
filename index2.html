@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Diff with Alignment</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; text-align: center; padding: 20px; }
+        .canvas-wrapper { position: relative; display: inline-block; border: 2px solid #444; background: #000; overflow: hidden; }
+        canvas { display: block; max-width: 100%; }
+        .controls { margin: 20px 0; padding: 20px; background: #2a2a2a; border-radius: 12px; }
+        .nudge-btns { display: grid; grid-template-columns: repeat(3, 50px); gap: 5px; justify-content: center; margin: 15px 0; }
+        .nudge-btns button { padding: 10px; cursor: pointer; background: #444; color: white; border: none; border-radius: 4px; }
+        .nudge-btns button:hover { background: #666; }
+        .main-btn { padding: 12px 30px; background: #007bff; border: none; color: white; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .main-btn:hover { background: #0056b3; }
+        .info { font-size: 0.9em; color: #aaa; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+    <h1>🔍 Image Alignment & Diff</h1>
+  <a href="index.html">versi Baru</a>
+    <p>Upload, lalu gunakan panah untuk menyelaraskan Gambar B di atas Gambar A.</p>
+
+    <div class="controls">
+        <input type="file" id="upload-a" accept="image/*">
+        <input type="file" id="upload-b" accept="image/*">
+        
+        <div class="nudge-btns">
+            <div></div><button onclick="move(0, -1)">▲</button><div></div>
+            <button onclick="move(-1, 0)">◀</button>
+            <button onclick="resetOffset()">●</button>
+            <button onclick="move(1, 0)">▶</button>
+            <div></div><button onclick="move(0, 1)">▼</button><div></div>
+        </div>
+        <div class="info">Offset Gambar B: <span id="off-x">0</span>px, <span id="off-y">0</span>px</div>
+        
+        <button class="main-btn" onclick="compareImages()">Mulai Bandingkan</button>
+    </div>
+
+    <div class="container">
+        <h3>Preview Penyelarasan (B di atas A)</h3>
+        <div class="canvas-wrapper">
+            <canvas id="main-canvas"></canvas>
+        </div>
+        
+        <h3>Hasil Perbedaan</h3>
+        <canvas id="diff-canvas" style="border: 1px solid #555; margin: 0 auto;"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const diffCanvas = document.getElementById('diff-canvas');
+        const diffCtx = diffCanvas.getContext('2d');
+
+        let imgA = new Image();
+        let imgB = new Image();
+        let offX = 0;
+        let offY = 0;
+
+        // Upload Handlers
+        document.getElementById('upload-a').onchange = (e) => loadImg(e, imgA);
+        document.getElementById('upload-b').onchange = (e) => loadImg(e, imgB);
+
+        function loadImg(e, imgObj) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                imgObj.onload = () => {
+                    if (imgObj === imgA) {
+                        canvas.width = imgA.width;
+                        canvas.height = imgA.height;
+                    }
+                    renderPreview();
+                };
+                imgObj.src = event.target.result;
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        }
+
+        function move(x, y) {
+            offX += x;
+            offY += y;
+            document.getElementById('off-x').innerText = offX;
+            document.getElementById('off-y').innerText = offY;
+            renderPreview();
+        }
+
+        function resetOffset() {
+            offX = 0; offY = 0;
+            move(0,0);
+        }
+
+        function renderPreview() {
+            if (!imgA.src) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Gambar A (Dasar)
+            ctx.globalAlpha = 1.0;
+            ctx.drawImage(imgA, 0, 0);
+
+            // Gambar B (Overlay Transparan untuk alignment)
+            if (imgB.src) {
+                ctx.globalAlpha = 0.5; // Transparansi 50%
+                ctx.drawImage(imgB, offX, offY);
+            }
+        }
+
+        function compareImages() {
+            if (!imgA.src || !imgB.src) return alert("Upload kedua gambar!");
+
+            diffCanvas.width = imgA.width;
+            diffCanvas.height = imgA.height;
+
+            // Kita ambil data murni dari masing-masing gambar tanpa transparansi preview
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tCtx = tempCanvas.getContext('2d');
+
+            // Ambil data Pixel Gambar A
+            tCtx.drawImage(imgA, 0, 0);
+            const dataA = tCtx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+            // Ambil data Pixel Gambar B dengan offset
+            tCtx.clearRect(0, 0, canvas.width, canvas.height);
+            tCtx.drawImage(imgB, offX, offY);
+            const dataB = tCtx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+            const diffData = diffCtx.createImageData(canvas.width, canvas.height);
+            const res = diffData.data;
+
+            for (let i = 0; i < dataA.length; i += 4) {
+                const rDiff = Math.abs(dataA[i] - dataB[i]);
+                const gDiff = Math.abs(dataA[i+1] - dataB[i+1]);
+                const bDiff = Math.abs(dataA[i+2] - dataB[i+2]);
+
+                if (rDiff + gDiff + bDiff > 40) {
+                    res[i] = 255; res[i+1] = 0; res[i+2] = 0; res[i+3] = 255; // Merah untuk beda
+                } else {
+                    res[i] = dataA[i]; res[i+1] = dataA[i+1]; res[i+2] = dataA[i+2]; res[i+3] = 100; // Ghosting untuk yang sama
+                }
+            }
+            diffCtx.putImageData(diffData, 0, 0);
+        }
+    </script>
+</body>
+</html>
