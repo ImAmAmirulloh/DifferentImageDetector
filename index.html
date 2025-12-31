@@ -167,21 +167,22 @@
 
     <script>
         const img = document.getElementById('main-img');
-        const box1 = document.getElementById('box-1');
-        const box2 = document.getElementById('box-2');
-        const resizer = document.getElementById('resizer');
-        const prevCanvas = document.getElementById('prev-canvas');
-        const resCanvas = document.getElementById('res-canvas');
+    const box1 = document.getElementById('box-1');
+    const box2 = document.getElementById('box-2');
+    const resizer = document.getElementById('resizer');
+    const prevCanvas = document.getElementById('prev-canvas');
+    const resCanvas = document.getElementById('res-canvas');
 
-        let state = {
-            x1: 20, y1: 20, w: 200, h: 200,
-            x2: 230, y2: 20,
-            isDragging: false, isResizing: false, activeBox: null,
-            startX: 0, startY: 0
-        };
+    let state = {
+        x1: 20, y1: 20, w: 200, h: 200,
+        x2: 230, y2: 20,
+        isDragging: false, isResizing: false, activeBox: null,
+        startX: 0, startY: 0
+    };
 
-        // --- UPLOAD ---
-        document.getElementById('upload-input').onchange = (e) => {
+    // --- 1. UPLOAD IMAGE ---
+    document.getElementById('upload-input').onchange = (e) => {
+        if(e.target.files && e.target.files[0]){
             const reader = new FileReader();
             reader.onload = (ev) => {
                 img.src = ev.target.result;
@@ -192,96 +193,181 @@
                 };
             };
             reader.readAsDataURL(e.target.files[0]);
-        };
-
-        // --- LOGIC SNAP ---
-        function syncBox(mode) {
-            if (mode === 'Y') { // Sejajar ke samping
-                state.y2 = state.y1;
-                state.x2 = state.x1 + state.w;
-            } else if (mode === 'X') { // Sejajar ke bawah
-                state.x2 = state.x1;
-                state.y2 = state.y1 + state.h;
-            }
-            updateVisuals();
         }
+    };
 
-        // --- NUDGE ---
-        function nudge(dx, dy) {
-            state.x2 += dx; state.y2 += dy;
-            updateVisuals();
+    // --- 2. LOGIC SNAP & NUDGE ---
+    function syncBox(mode) {
+        if (mode === 'Y') { 
+            state.y2 = state.y1;
+            state.x2 = state.x1 + state.w;
+        } else if (mode === 'X') { 
+            state.x2 = state.x1;
+            state.y2 = state.y1 + state.h;
         }
+        updateVisuals();
+    }
 
-        // --- INTERACTION ---
-        window.onmousedown = (e) => {
-            if (e.target === resizer) { state.isResizing = true; } 
-            else if (e.target === box1 || e.target === box2) {
+    function nudge(dx, dy) {
+        state.x2 += dx; state.y2 += dy;
+        updateVisuals();
+    }
+
+    // --- 3. UNIFIED INPUT HANDLING (MOUSE & TOUCH) ---
+    
+    // Helper untuk mengambil koordinat X/Y baik dari Mouse maupun Touch
+    function getClientPos(e) {
+        if (e.touches && e.touches.length > 0) {
+            return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        return { x: e.clientX, y: e.clientY };
+    }
+
+    // A. Handle START (MouseDown / TouchStart)
+    function handleStart(e) {
+        const target = e.target;
+        
+        // Cek apakah yang disentuh adalah elemen interaktif kita
+        if (target === resizer || target === box1 || target === box2) {
+            // Mencegah scroll layar saat menyentuh box
+            if(e.type === 'touchstart') e.preventDefault(); 
+            
+            const pos = getClientPos(e);
+            state.startX = pos.x;
+            state.startY = pos.y;
+
+            if (target === resizer) {
+                state.isResizing = true;
+            } else {
                 state.isDragging = true;
-                state.activeBox = e.target;
+                state.activeBox = target;
             }
-            state.startX = e.clientX;
-            state.startY = e.clientY;
-        };
+        }
+    }
 
-        window.onmousemove = (e) => {
-            if (!state.isDragging && !state.isResizing) return;
-            const dx = e.clientX - state.startX;
-            const dy = e.clientY - state.startY;
+    // B. Handle MOVE (MouseMove / TouchMove)
+    function handleMove(e) {
+        if (!state.isDragging && !state.isResizing) return;
 
-            if (state.isResizing) {
-                state.w = Math.max(20, state.w + dx);
-                state.h = Math.max(20, state.h + dy);
-            } else if (state.isDragging) {
-                if (state.activeBox === box1) { state.x1 += dx; state.y1 += dy; } 
-                else { state.x2 += dx; state.y2 += dy; }
+        // Mencegah scroll layar saat sedang drag/resize
+        if(e.type === 'touchmove') e.preventDefault(); 
+
+        const pos = getClientPos(e);
+        const dx = pos.x - state.startX;
+        const dy = pos.y - state.startY;
+
+        if (state.isResizing) {
+            // Minimal ukuran 20px agar tidak hilang
+            state.w = Math.max(20, state.w + dx);
+            state.h = Math.max(20, state.h + dy);
+        } else if (state.isDragging) {
+            if (state.activeBox === box1) {
+                state.x1 += dx; state.y1 += dy;
+            } else {
+                state.x2 += dx; state.y2 += dy;
             }
-            state.startX = e.clientX;
-            state.startY = e.clientY;
-            updateVisuals();
-        };
-
-        window.onmouseup = () => { state.isDragging = false; state.isResizing = false; };
-
-        function updateVisuals() {
-            [box1, box2].forEach(b => { b.style.width = state.w + 'px'; b.style.height = state.h + 'px'; });
-            box1.style.left = state.x1 + 'px'; box1.style.top = state.y1 + 'px';
-            box2.style.left = state.x2 + 'px'; box2.style.top = state.y2 + 'px';
-            drawPreview();
         }
 
-        function drawPreview() {
-            if (!img.src) return;
-            prevCanvas.width = state.w; prevCanvas.height = state.h;
-            const ctx = prevCanvas.getContext('2d');
-            ctx.globalAlpha = 1.0;
-            ctx.drawImage(img, state.x1, state.y1, state.w, state.h, 0, 0, state.w, state.h);
-            ctx.globalAlpha = 0.5;
-            ctx.drawImage(img, state.x2, state.y2, state.w, state.h, 0, 0, state.w, state.h);
-        }
+        // Update posisi awal untuk frame selanjutnya
+        state.startX = pos.x;
+        state.startY = pos.y;
+        
+        updateVisuals();
+    }
 
-        function processDiff() {
-            resCanvas.width = state.w; resCanvas.height = state.h;
-            const ctx = resCanvas.getContext('2d');
-            const temp = document.createElement('canvas');
-            temp.width = img.width; temp.height = img.height;
-            const tCtx = temp.getContext('2d');
-            tCtx.drawImage(img, 0, 0);
+    // C. Handle END (MouseUp / TouchEnd)
+    function handleEnd() {
+        state.isDragging = false;
+        state.isResizing = false;
+        state.activeBox = null;
+    }
 
-            const d1 = tCtx.getImageData(state.x1, state.y1, state.w, state.h).data;
-            const d2 = tCtx.getImageData(state.x2, state.y2, state.w, state.h).data;
-            const out = ctx.createImageData(state.w, state.h);
+    // --- 4. EVENT LISTENERS ---
+    
+    // Mouse Events
+    window.addEventListener('mousedown', handleStart);
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleEnd);
 
-            for (let i = 0; i < d1.length; i += 4) {
-                const diff = Math.abs(d1[i]-d2[i]) + Math.abs(d1[i+1]-d2[i+1]) + Math.abs(d1[i+2]-d2[i+2]);
-                if (diff > 40) {
-                    out.data[i]=255; out.data[i+1]=0; out.data[i+2]=0; out.data[i+3]=255;
-                } else {
-                    out.data[i]=d1[i]; out.data[i+1]=d1[i+1]; out.data[i+2]=d1[i+2]; out.data[i+3]=255;
-                }
+    // Touch Events (Passive: false penting agar preventDefault bekerja)
+    window.addEventListener('touchstart', handleStart, { passive: false });
+    window.addEventListener('touchmove', handleMove, { passive: false });
+    window.addEventListener('touchend', handleEnd);
+
+
+    // --- 5. RENDER LOGIC ---
+    function updateVisuals() {
+        // Terapkan state ke DOM
+        box1.style.width = state.w + 'px'; 
+        box1.style.height = state.h + 'px';
+        box1.style.left = state.x1 + 'px'; 
+        box1.style.top = state.y1 + 'px';
+
+        box2.style.width = state.w + 'px'; 
+        box2.style.height = state.h + 'px';
+        box2.style.left = state.x2 + 'px'; 
+        box2.style.top = state.y2 + 'px';
+
+        drawPreview();
+    }
+
+    function drawPreview() {
+        if (!img.src) return;
+        
+        // Pastikan ukuran canvas sesuai box
+        prevCanvas.width = state.w; 
+        prevCanvas.height = state.h;
+        
+        const ctx = prevCanvas.getContext('2d');
+        
+        // Gambar Box 1 (Solid)
+        ctx.globalAlpha = 1.0;
+        ctx.drawImage(img, state.x1, state.y1, state.w, state.h, 0, 0, state.w, state.h);
+        
+        // Gambar Box 2 (Transparan 50%)
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(img, state.x2, state.y2, state.w, state.h, 0, 0, state.w, state.h);
+    }
+
+    function processDiff() {
+        if (!img.src) return;
+
+        resCanvas.width = state.w; 
+        resCanvas.height = state.h;
+        const ctx = resCanvas.getContext('2d');
+        
+        // Canvas sementara untuk mengambil data pixel mentah
+        const temp = document.createElement('canvas');
+        temp.width = img.width; 
+        temp.height = img.height;
+        const tCtx = temp.getContext('2d');
+        tCtx.drawImage(img, 0, 0);
+
+        // Ambil pixel data
+        const d1 = tCtx.getImageData(state.x1, state.y1, state.w, state.h).data;
+        const d2 = tCtx.getImageData(state.x2, state.y2, state.w, state.h).data;
+        const out = ctx.createImageData(state.w, state.h);
+
+        // Loop Pixel Comparison
+        for (let i = 0; i < d1.length; i += 4) {
+            const diff = Math.abs(d1[i]-d2[i]) + Math.abs(d1[i+1]-d2[i+1]) + Math.abs(d1[i+2]-d2[i+2]);
+            if (diff > 45) { // Threshold sensitivitas
+                out.data[i]=255;   // R
+                out.data[i+1]=0;   // G
+                out.data[i+2]=0;   // B
+                out.data[i+3]=255; // Alpha
+            } else {
+                // Tampilkan gambar asli agak gelap jika sama
+                out.data[i]=d1[i]; 
+                out.data[i+1]=d1[i+1]; 
+                out.data[i+2]=d1[i+2]; 
+                out.data[i+3]=255;
             }
-            ctx.putImageData(out, 0, 0);
         }
+        ctx.putImageData(out, 0, 0);
+    }
     </script>
 </body>
 </html>
+
 
